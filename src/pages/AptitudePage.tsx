@@ -24,7 +24,7 @@ export const AptitudePage: React.FC = () => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: string }>({}); // questionText -> optionKey
   const [markedForReview, setMarkedForReview] = useState<{ [key: string]: boolean }>({}); // questionText -> boolean
-  const [timeLeft, setTimeLeft] = useState(600); // 10 minutes
+  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,7 +47,7 @@ export const AptitudePage: React.FC = () => {
 
     const fetchQuestions = async () => {
       try {
-        const res = await aptitudeService.getQuestions('Quantitative Reasoning', 'Medium', 5);
+        const res = await aptitudeService.getQuestions('Quantitative Reasoning', 'Medium', 30);
         setQuestions(res.questions || []);
       } catch (err: any) {
         addToast('Failed to load assessment questions. Reverting to practice bank.', 'error');

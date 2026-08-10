@@ -349,36 +349,346 @@ class GeminiService:
             # Make sure it returns in expected schema
             parsed = json.loads(raw_response)
             if isinstance(parsed, dict) and "questions" in parsed:
+                # If they requested more, return them all. If less, slice.
                 return parsed
             return {"questions": parsed if isinstance(parsed, list) else []}
         except Exception as e:
             logger.warning(f"Failed to generate aptitude questions, returning fallback mock. Error: {e}")
-            return {
-                "questions": [
-                    {
-                        "question_text": "If 5 machines take 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?",
-                        "options": [
-                            {"key": "A", "text": "100 minutes"},
-                            {"key": "B", "text": "5 minutes"},
-                            {"key": "C", "text": "20 minutes"},
-                            {"key": "D", "text": "50 minutes"}
-                        ],
-                        "correct_option": "B",
-                        "explanation": "If 5 machines make 5 widgets in 5 minutes, it means 1 machine takes 5 minutes to make 1 widget. Therefore, 100 machines working simultaneously will take 5 minutes to make 100 widgets."
-                    },
-                    {
-                        "question_text": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
-                        "options": [
-                            {"key": "A", "text": "$0.10"},
-                            {"key": "B", "text": "$0.05"},
-                            {"key": "C", "text": "$0.15"},
-                            {"key": "D", "text": "$0.50"}
-                        ],
-                        "correct_option": "B",
-                        "explanation": "Let ball cost x. Bat costs x + $1.00. x + (x + 1.00) = 1.10 -> 2x = 0.10 -> x = 0.05. Ball costs 5 cents."
-                    }
-                ]
-            }
+            fallback_questions = [
+                {
+                    "question_text": "If 5 machines take 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?",
+                    "options": [
+                        {"key": "A", "text": "100 minutes"},
+                        {"key": "B", "text": "5 minutes"},
+                        {"key": "C", "text": "20 minutes"},
+                        {"key": "D", "text": "50 minutes"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "If 5 machines make 5 widgets in 5 minutes, it means 1 machine takes 5 minutes to make 1 widget. Therefore, 100 machines working simultaneously will take 5 minutes to make 100 widgets."
+                },
+                {
+                    "question_text": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+                    "options": [
+                        {"key": "A", "text": "$0.10"},
+                        {"key": "B", "text": "$0.05"},
+                        {"key": "C", "text": "$0.15"},
+                        {"key": "D", "text": "$0.50"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Let ball cost x. Bat costs x + $1.00. x + (x + 1.00) = 1.10 -> 2x = 0.10 -> x = 0.05. Ball costs 5 cents."
+                },
+                {
+                    "question_text": "A train travelling at 60 km/hr passes a post in 9 seconds. What is the length of the train in meters?",
+                    "options": [
+                        {"key": "A", "text": "120 m"},
+                        {"key": "B", "text": "150 m"},
+                        {"key": "C", "text": "180 m"},
+                        {"key": "D", "text": "200 m"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Speed = 60 * (5/18) = 50/3 m/sec. Distance (length of train) = Speed * Time = (50/3) * 9 = 150 meters."
+                },
+                {
+                    "question_text": "If a person walks at 14 km/hr instead of 10 km/hr, he would have walked 20 km more. The actual distance travelled by him is:",
+                    "options": [
+                        {"key": "A", "text": "50 km"},
+                        {"key": "B", "text": "70 km"},
+                        {"key": "C", "text": "80 km"},
+                        {"key": "D", "text": "40 km"}
+                    ],
+                    "correct_option": "A",
+                    "explanation": "Let actual distance be x. Speed ratio = Distance ratio -> x/10 = (x+20)/14 -> 14x = 10x + 200 -> 4x = 200 -> x = 50 km."
+                },
+                {
+                    "question_text": "A worker can build a wall in 30 days. Another worker can do it in 20 days. How long will it take if they work together?",
+                    "options": [
+                        {"key": "A", "text": "15 days"},
+                        {"key": "B", "text": "12 days"},
+                        {"key": "C", "text": "10 days"},
+                        {"key": "D", "text": "8 days"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Combined rate per day = 1/30 + 1/20 = (2+3)/60 = 5/60 = 1/12. So they will finish in 12 days."
+                },
+                {
+                    "question_text": "A sum of money at simple interest amounts to $815 in 3 years and to $854 in 4 years. Find the principal sum:",
+                    "options": [
+                        {"key": "A", "text": "$650"},
+                        {"key": "B", "text": "$698"},
+                        {"key": "C", "text": "$700"},
+                        {"key": "D", "text": "$690"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Interest for 1 year = $854 - $815 = $39. Interest for 3 years = 39 * 3 = $117. Principal = $815 - $117 = $698."
+                },
+                {
+                    "question_text": "Find the odd term in the sequence: 3, 5, 7, 12, 13, 17, 19",
+                    "options": [
+                        {"key": "A", "text": "7"},
+                        {"key": "B", "text": "12"},
+                        {"key": "C", "text": "13"},
+                        {"key": "D", "text": "17"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "All numbers except 12 are prime numbers. 12 is a composite number."
+                },
+                {
+                    "question_text": "What is the next number in the sequence: 2, 6, 12, 20, 30, 42, ...?",
+                    "options": [
+                        {"key": "A", "text": "50"},
+                        {"key": "B", "text": "54"},
+                        {"key": "C", "text": "56"},
+                        {"key": "D", "text": "60"}
+                    ],
+                    "correct_option": "C",
+                    "explanation": "The differences between consecutive terms are 4, 6, 8, 10, 12. The next difference is 14. 42 + 14 = 56."
+                },
+                {
+                    "question_text": "Three unbiased coins are tossed. What is the probability of getting at most two heads?",
+                    "options": [
+                        {"key": "A", "text": "3/4"},
+                        {"key": "B", "text": "7/8"},
+                        {"key": "C", "text": "1/2"},
+                        {"key": "D", "text": "3/8"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Total outcomes = 8. The only outcome with more than 2 heads is HHH. Hence, 7 out of 8 outcomes have at most 2 heads. Probability is 7/8."
+                },
+                {
+                    "question_text": "A father is twice as old as his son. 20 years ago, the age of the father was 12 times the age of the son. Present age of the father is:",
+                    "options": [
+                        {"key": "A", "text": "40 years"},
+                        {"key": "B", "text": "44 years"},
+                        {"key": "C", "text": "48 years"},
+                        {"key": "D", "text": "50 years"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Let son's age be x. Father is 2x. 2x - 20 = 12(x - 20) -> 2x - 20 = 12x - 240 -> 10x = 220 -> x = 22. Father's age is 2 * 22 = 44 years."
+                },
+                {
+                    "question_text": "If 'PROMPT' is coded as 'QSPNQU', then 'REFACTOR' is coded as:",
+                    "options": [
+                        {"key": "A", "text": "SFGBCUPS"},
+                        {"key": "B", "text": "SFGBDUPS"},
+                        {"key": "C", "text": "QDEZBSNQ"},
+                        {"key": "D", "text": "SFGBDVPT"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Each letter in the word is replaced by its succeeding letter in alphabetical order: R->S, E->F, F->G, A->B, C->D, T->U, O->P, R->S."
+                },
+                {
+                    "question_text": "If a store sells an item for $120 making a 20% profit, what was the cost price of the item?",
+                    "options": [
+                        {"key": "A", "text": "$96"},
+                        {"key": "B", "text": "$100"},
+                        {"key": "C", "text": "$105"},
+                        {"key": "D", "text": "$98"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Cost Price = Selling Price / (1 + Profit Margin) = 120 / 1.20 = $100."
+                },
+                {
+                    "question_text": "Six bells commence tolling together and toll at intervals of 2, 4, 6, 8, 10 and 12 seconds respectively. In 30 minutes, how many times do they toll together?",
+                    "options": [
+                        {"key": "A", "text": "15 times"},
+                        {"key": "B", "text": "16 times"},
+                        {"key": "C", "text": "30 times"},
+                        {"key": "D", "text": "31 times"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "LCM of 2, 4, 6, 8, 10, 12 is 120 seconds (2 minutes). In 30 minutes, they toll together 30/2 = 15 times, plus the 1st initial toll at start = 16 times."
+                },
+                {
+                    "question_text": "A is the mother of B. B is the sister of C. C is the father of D. How is A related to D?",
+                    "options": [
+                        {"key": "A", "text": "Mother"},
+                        {"key": "B", "text": "Aunt"},
+                        {"key": "C", "text": "Grandmother"},
+                        {"key": "D", "text": "Sister"}
+                    ],
+                    "correct_option": "C",
+                    "explanation": "B is C's sister, so A (B's mother) is also C's mother. C is D's father. Therefore, A is the grandmother of D."
+                },
+                {
+                    "question_text": "If Sunday is the first day of a month of 30 days, how many Sundays are there in that month?",
+                    "options": [
+                        {"key": "A", "text": "4"},
+                        {"key": "B", "text": "5"},
+                        {"key": "C", "text": "6"},
+                        {"key": "D", "text": "Cannot be determined"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Sundays will fall on the 1st, 8th, 15th, 22nd, and 29th. That gives exactly 5 Sundays."
+                },
+                {
+                    "question_text": "The average of 5 consecutive odd numbers is 61. Find the highest of these numbers.",
+                    "options": [
+                        {"key": "A", "text": "61"},
+                        {"key": "B", "text": "63"},
+                        {"key": "C", "text": "65"},
+                        {"key": "D", "text": "67"}
+                    ],
+                    "correct_option": "C",
+                    "explanation": "Let the numbers be x-4, x-2, x, x+2, x+4. Their sum is 5x. Average = 5x/5 = x = 61. The highest number is x+4 = 61 + 4 = 65."
+                },
+                {
+                    "question_text": "A cube has a volume of 216 cubic cm. What is its surface area in square cm?",
+                    "options": [
+                        {"key": "A", "text": "180"},
+                        {"key": "B", "text": "216"},
+                        {"key": "C", "text": "240"},
+                        {"key": "D", "text": "144"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Side length of cube a = cuberoot(216) = 6 cm. Surface area = 6 * a^2 = 6 * 36 = 216 square cm."
+                },
+                {
+                    "question_text": "If 12 men can complete a project in 8 days, how many days will it take 16 men to complete it?",
+                    "options": [
+                        {"key": "A", "text": "6 days"},
+                        {"key": "B", "text": "5 days"},
+                        {"key": "C", "text": "4 days"},
+                        {"key": "D", "text": "7 days"}
+                    ],
+                    "correct_option": "A",
+                    "explanation": "Total Man-days required = 12 * 8 = 96. Days for 16 men = 96 / 16 = 6 days."
+                },
+                {
+                    "question_text": "A bag contains 4 red balls, 6 blue balls, and 8 green balls. If a ball is drawn at random, what is the probability that it is NOT red?",
+                    "options": [
+                        {"key": "A", "text": "2/9"},
+                        {"key": "B", "text": "7/9"},
+                        {"key": "C", "text": "5/9"},
+                        {"key": "D", "text": "1/3"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Total balls = 4 + 6 + 8 = 18. Non-red balls = 14. Probability = 14/18 = 7/9."
+                },
+                {
+                    "question_text": "The speed of a boat in standing water is 9 km/h and the speed of the stream is 1.5 km/h. A distance of 105 km upstream is covered in:",
+                    "options": [
+                        {"key": "A", "text": "10 hours"},
+                        {"key": "B", "text": "12 hours"},
+                        {"key": "C", "text": "14 hours"},
+                        {"key": "D", "text": "15 hours"}
+                    ],
+                    "correct_option": "C",
+                    "explanation": "Upstream speed = 9 - 1.5 = 7.5 km/h. Time = Distance / Speed = 105 / 7.5 = 14 hours."
+                },
+                {
+                    "question_text": "Two numbers are in the ratio 3:5. If 9 is subtracted from each, the new ratio is 12:23. What is the smaller number?",
+                    "options": [
+                        {"key": "A", "text": "27"},
+                        {"key": "B", "text": "33"},
+                        {"key": "C", "text": "45"},
+                        {"key": "D", "text": "55"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Let numbers be 3x and 5x. (3x-9)/(5x-9) = 12/23 -> 23(3x-9) = 12(5x-9) -> 69x - 207 = 60x - 108 -> 9x = 99 -> x = 11. Smaller number is 3 * 11 = 33."
+                },
+                {
+                    "question_text": "The ratio between the perimeter and the breadth of a rectangle is 8:1. If the area of the rectangle is 363 sq cm, what is the length of the rectangle?",
+                    "options": [
+                        {"key": "A", "text": "22 cm"},
+                        {"key": "B", "text": "33 cm"},
+                        {"key": "C", "text": "44 cm"},
+                        {"key": "D", "text": "11 cm"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Perimeter = 2(L+B). 2(L+B)/B = 8/1 -> 2L+2B = 8B -> 2L = 6B -> L = 3B. Area = L * B = 3B^2 = 363 -> B^2 = 121 -> B = 11. Length L = 3 * 11 = 33 cm."
+                },
+                {
+                    "question_text": "In a class, 60% of students pass in Math, 50% pass in English, and 30% pass in both. What percent of students failed in both?",
+                    "options": [
+                        {"key": "A", "text": "10%"},
+                        {"key": "B", "text": "20%"},
+                        {"key": "C", "text": "30%"},
+                        {"key": "D", "text": "15%"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Percentage passed in at least one = P(M) + P(E) - P(M and E) = 60 + 50 - 30 = 80%. Failed in both = 100 - 80 = 20%."
+                },
+                {
+                    "question_text": "A pipe can fill a cistern in 6 hours, while another empties it in 10 hours. If both are opened together, how long to fill the empty cistern?",
+                    "options": [
+                        {"key": "A", "text": "12 hours"},
+                        {"key": "B", "text": "15 hours"},
+                        {"key": "C", "text": "16 hours"},
+                        {"key": "D", "text": "18 hours"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Net rate per hour = 1/6 - 1/10 = (5-3)/30 = 2/30 = 1/15. So it will take 15 hours to fill."
+                },
+                {
+                    "question_text": "By selling 45 lemons for $40, a man loses 20%. How many should he sell for $24 to gain 20%?",
+                    "options": [
+                        {"key": "A", "text": "15"},
+                        {"key": "B", "text": "18"},
+                        {"key": "C", "text": "20"},
+                        {"key": "D", "text": "24"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Cost price of 45 lemons = 40 / 0.80 = $50. CP of 1 lemon = 50/45 = 10/9. Target SP of 1 lemon to gain 20% = (10/9) * 1.2 = 4/3. lemons for $24 = 24 / (4/3) = 18 lemons."
+                },
+                {
+                    "question_text": "If the day before yesterday was Thursday, what day will be the day after tomorrow?",
+                    "options": [
+                        {"key": "A", "text": "Sunday"},
+                        {"key": "B", "text": "Monday"},
+                        {"key": "C", "text": "Tuesday"},
+                        {"key": "D", "text": "Saturday"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "If day before yesterday was Thursday, yesterday was Friday, and today is Saturday. Tomorrow will be Sunday, and the day after tomorrow will be Monday."
+                },
+                {
+                    "question_text": "Find the missing term in the sequence: 4, 9, 19, 39, 79, ...?",
+                    "options": [
+                        {"key": "A", "text": "119"},
+                        {"key": "B", "text": "139"},
+                        {"key": "C", "text": "159"},
+                        {"key": "D", "text": "169"}
+                    ],
+                    "correct_option": "C",
+                    "explanation": "The pattern is: next term = (current term * 2) + 1. 79 * 2 + 1 = 159."
+                },
+                {
+                    "question_text": "A dealer marks his goods 30% above the cost price and gives a discount of 10% for cash payment. What is his gain percent?",
+                    "options": [
+                        {"key": "A", "text": "17%"},
+                        {"key": "B", "text": "20%"},
+                        {"key": "C", "text": "15%"},
+                        {"key": "D", "text": "13%"}
+                    ],
+                    "correct_option": "A",
+                    "explanation": "Let CP = 100. Marked Price = 130. Selling Price = 130 * 0.90 = 117. Profit = 17%."
+                },
+                {
+                    "question_text": "Two cards are drawn together from a pack of 52 cards. The probability that one is a spade and one is a heart is:",
+                    "options": [
+                        {"key": "A", "text": "3/26"},
+                        {"key": "B", "text": "13/102"},
+                        {"key": "C", "text": "1/26"},
+                        {"key": "D", "text": "1/52"}
+                    ],
+                    "correct_option": "B",
+                    "explanation": "Total ways to choose 2 cards = 52C2 = 1326. Ways to choose 1 spade and 1 heart = 13 * 13 = 169. Probability = 169/1326 = 13/102."
+                },
+                {
+                    "question_text": "If A:B = 2:3, B:C = 4:5, and C:D = 6:7, then A:B:C:D is:",
+                    "options": [
+                        {"key": "A", "text": "16:24:30:35"},
+                        {"key": "B", "text": "16:22:30:35"},
+                        {"key": "C", "text": "8:12:15:17"},
+                        {"key": "D", "text": "18:24:30:35"}
+                    ],
+                    "correct_option": "A",
+                    "explanation": "Combine ratios: A:B = 8:12, B:C = 12:15 (so A:B:C = 8:12:15). Since C:D = 6:7 = 15:17.5. Multiply all by 2 to get integer values: A:B:C:D = 16:24:30:35."
+                }
+            ]
+            # Slice according to requested num_questions, up to length of list
+            limit = min(num_questions, len(fallback_questions))
+            return {"questions": fallback_questions[:limit]}
 
     @classmethod
     async def generate_report(
