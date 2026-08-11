@@ -36,4 +36,5 @@ __pycache__/
 db_data.json
 backend/db_data.json
 .env
+backend/.env
 .env*.local

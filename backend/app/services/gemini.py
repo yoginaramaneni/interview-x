@@ -1,6 +1,12 @@
 import json
 import logging
-import google.generativeai as genai
+import time
+import random
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError
 from app.config import settings
 from app.prompts.templates import (
     RESUME_PARSE_PROMPT, JOB_ANALYZE_PROMPT, ATS_SCORE_PROMPT,
@@ -11,15 +17,132 @@ from app.prompts.templates import (
 
 logger = logging.getLogger(__name__)
 
-# Initialize the Gemini API client
+# Initialize the GenAI Client
+client = None
 if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "mock-api-key":
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    logger.info("Gemini API configured successfully.")
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        logger.info("Real google-genai Client initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize google-genai Client: {e}")
 else:
-    logger.warning("Gemini API Key is missing or set to mock. Running in mock-fallback mode.")
+    logger.warning("GEMINI_API_KEY is unset or 'mock-api-key'. Running in fallback/mock mode.")
 
-import time
-import random
+# --- Pydantic Schemas for Structured Gemini Outputs ---
+
+class ResumeProject(BaseModel):
+    title: str
+    description: str
+    technologies: List[str]
+
+class ResumeEducation(BaseModel):
+    institution: str
+    degree: str
+    start_year: str
+    end_year: str
+
+class ResumeExperience(BaseModel):
+    company: str
+    role: str
+    start_date: str
+    end_date: str
+    responsibilities: List[str]
+
+class ResumeSchema(BaseModel):
+    name: str
+    email: str
+    phone: str
+    skills: List[str]
+    education: List[ResumeEducation]
+    projects: List[ResumeProject]
+    experience: List[ResumeExperience]
+    certifications: List[str]
+
+class JobSchema(BaseModel):
+    company: str
+    role: str
+    required_skills: List[str]
+    preferred_skills: List[str]
+    responsibilities: List[str]
+    experience: str
+
+class ATSMatchSchema(BaseModel):
+    ats_score: int
+    skill_match: int
+    missing_skills: List[str]
+    resume_summary: str
+    strengths: List[str]
+    weaknesses: List[str]
+    improvement_suggestions: List[str]
+
+class GeneratedQuestion(BaseModel):
+    question: str
+    topic: str
+    difficulty: int
+    is_follow_up: bool
+
+class AnswerEvaluation(BaseModel):
+    score: int = Field(..., ge=0, le=100)
+    relevance: int = Field(..., ge=0, le=100)
+    correctness: int = Field(..., ge=0, le=100)
+    communication: int = Field(..., ge=0, le=100)
+    clarity: int = Field(..., ge=0, le=100)
+    strengths: List[str]
+    weaknesses: List[str]
+    improvements: List[str]
+    feedback: str
+    key_points_covered: List[str] = Field(default_factory=list)
+    key_points_missed: List[str] = Field(default_factory=list)
+
+class TestCodeCase(BaseModel):
+    input: str
+    expected: str
+
+class CodingQuestion(BaseModel):
+    title: str
+    description: str
+    starter_code: str
+    test_cases: List[TestCodeCase]
+
+class CodeReview(BaseModel):
+    time_complexity: str
+    space_complexity: str
+    strengths: str
+    weaknesses: str
+    optimization_suggestions: str
+    score: int
+
+class AptitudeOptionSchema(BaseModel):
+    key: str
+    text: str
+
+class AptitudeQuestionSchema(BaseModel):
+    question_text: str
+    options: List[AptitudeOptionSchema]
+    correct_option: str
+    explanation: str
+
+class AptitudeQuestionsSchema(BaseModel):
+    questions: List[AptitudeQuestionSchema]
+
+class LearningPlanSchema(BaseModel):
+    week_1: str
+    week_2: str
+    week_3: str
+
+class ScorecardReport(BaseModel):
+    overall_score: int
+    technical_score: int
+    communication_score: int
+    coding_score: int
+    aptitude_score: int
+    strengths: List[str]
+    weaknesses: List[str]
+    learning_plan: LearningPlanSchema
+    hiring_recommendation: str
+    hiring_rationale: str
+
+# --- Main Gemini Service Wrapper ---
 
 class GeminiService:
     @staticmethod
@@ -27,53 +150,62 @@ class GeminiService:
         return not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY == "mock-api-key"
 
     @classmethod
-    async def _call_gemini(cls, prompt: str, system_instruction: str = None) -> str:
-        """Helper to invoke Gemini API with optional system instructions and exponential backoff retries."""
+    async def _call_gemini_structured(
+        cls, 
+        prompt: str, 
+        response_schema: Any, 
+        system_instruction: str = None
+    ) -> Any:
+        """Call Gemini model with structured output (response_schema) and exponential backoff retry policy."""
         if cls._is_mock_mode():
-            logger.debug("Mock mode active. Skipping live API call.")
             raise ValueError("Mock Mode Enabled")
 
-        try:
-            model_name = "gemini-2.5-flash"
-            
-            generation_config = {
-                "response_mime_type": "application/json",
-            }
-            
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                generation_config=generation_config,
-                system_instruction=system_instruction
-            )
-            
-            import asyncio
-            from concurrent.futures import ThreadPoolExecutor
-            loop = asyncio.get_event_loop()
-            
-            def sync_generate():
-                max_retries = 3
-                initial_delay = 1.0
-                backoff_factor = 2.0
+        if not client:
+            raise ValueError("Google GenAI client is not configured (GEMINI_API_KEY is missing or set to mock).")
+
+        max_retries = 3
+        initial_delay = 1.0
+        backoff_factor = 2.0
+
+        for attempt in range(max_retries):
+            try:
+                import asyncio
+                from concurrent.futures import ThreadPoolExecutor
+                loop = asyncio.get_event_loop()
                 
-                for attempt in range(max_retries):
-                    try:
-                        response = model.generate_content(prompt)
-                        return response.text
-                    except Exception as ex:
-                        if attempt == max_retries - 1:
-                            logger.error(f"Gemini API final attempt failed: {ex}")
-                            raise ex
-                        delay = initial_delay * (backoff_factor ** attempt) + random.uniform(0, 0.5)
-                        logger.warning(f"Gemini attempt {attempt + 1} failed: {ex}. Retrying in {delay:.2f}s...")
-                        time.sleep(delay)
+                def sync_call():
+                    config = types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=response_schema
+                    )
+                    response = client.models.generate_content(
+                        model=settings.GEMINI_MODEL,
+                        contents=prompt,
+                        config=config
+                    )
+                    return response.text
+
+                with ThreadPoolExecutor() as pool:
+                    result_text = await loop.run_in_executor(pool, sync_call)
                 
-            with ThreadPoolExecutor() as pool:
-                result = await loop.run_in_executor(pool, sync_generate)
-                
-            return result
-        except Exception as e:
-            logger.error(f"Gemini API failure: {e}")
-            raise e
+                parsed_json = json.loads(result_text)
+                return parsed_json
+
+            except APIError as e:
+                # Handle temporary GenAI API errors (like 429 rate limit or 503 service unavailable)
+                if e.code in (429, 503) and attempt < max_retries - 1:
+                    delay = initial_delay * (backoff_factor ** attempt) + random.uniform(0, 0.5)
+                    logger.warning(f"Gemini API temporary error {e.code} (attempt {attempt + 1}). Retrying in {delay:.2f}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                logger.error(f"Gemini API Error: {e}")
+                raise e
+            except Exception as e:
+                logger.error(f"Unexpected error calling Gemini API: {e}")
+                raise e
+
+        raise RuntimeError("Failed to obtain a valid response from Gemini after multiple attempts.")
 
     @classmethod
     async def transcribe_audio(cls, audio_bytes: bytes, mime_type: str) -> str:
@@ -82,9 +214,6 @@ class GeminiService:
             return "This is a mock transcription of the candidate's audio response discussing React rendering optimizations."
         
         try:
-            model_name = "gemini-2.5-flash"
-            model = genai.GenerativeModel(model_name=model_name)
-            
             import asyncio
             from concurrent.futures import ThreadPoolExecutor
             loop = asyncio.get_event_loop()
@@ -96,13 +225,16 @@ class GeminiService:
                 
                 for attempt in range(max_retries):
                     try:
-                        response = model.generate_content([
-                            {
-                                "mime_type": mime_type,
-                                "data": audio_bytes
-                            },
-                            "Transcribe the following audio recording accurately. Return only the transcription text, nothing else. If the audio is silent or unintelligible, return an empty string."
-                        ])
+                        response = client.models.generate_content(
+                            model=settings.GEMINI_MODEL,
+                            contents=[
+                                types.Part.from_bytes(
+                                    data=audio_bytes,
+                                    mime_type=mime_type
+                                ),
+                                "Transcribe the following audio recording accurately. Return only the transcription text, nothing else. If the audio is silent or unintelligible, return an empty string."
+                            ]
+                        )
                         return response.text
                     except Exception as ex:
                         if attempt == max_retries - 1:
@@ -114,7 +246,7 @@ class GeminiService:
                 
             with ThreadPoolExecutor() as pool:
                 result = await loop.run_in_executor(pool, sync_generate)
-            return result.strip()
+            return result.strip() if result else ""
         except Exception as e:
             logger.error(f"Failed to transcribe audio via Gemini: {e}")
             raise e
@@ -123,14 +255,16 @@ class GeminiService:
     async def parse_resume(cls, resume_text: str) -> dict:
         prompt = RESUME_PARSE_PROMPT.format(resume_text=resume_text)
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=ResumeSchema,
                 system_instruction="You are an expert resume parsing system. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini parse_resume failed: {e}")
+                raise e
             logger.warning(f"Failed to parse resume via Gemini, returning fallback mock. Error: {e}")
-            # Mock Fallback data
             return {
                 "name": "Jane Doe",
                 "email": "jane.doe@example.com",
@@ -167,12 +301,15 @@ class GeminiService:
     async def analyze_job(cls, job_text: str) -> dict:
         prompt = JOB_ANALYZE_PROMPT.format(job_text=job_text)
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=JobSchema,
                 system_instruction="You are an expert job description analyzer. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini analyze_job failed: {e}")
+                raise e
             logger.warning(f"Failed to analyze job via Gemini, returning fallback mock. Error: {e}")
             return {
                 "company": "Innovate Corp",
@@ -194,12 +331,15 @@ class GeminiService:
             job_data=json.dumps(job_data, indent=2)
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=ATSMatchSchema,
                 system_instruction="You are a strict ATS matcher scoring resumes against JDs. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini calculate_ats failed: {e}")
+                raise e
             logger.warning(f"Failed to calculate ATS score, returning fallback mock. Error: {e}")
             return {
                 "ats_score": 85,
@@ -229,12 +369,15 @@ class GeminiService:
             current_difficulty=current_difficulty
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=GeneratedQuestion,
                 system_instruction="You are an expert technical interviewer. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini generate_question failed: {e}")
+                raise e
             logger.warning(f"Failed to generate interview question, returning fallback mock. Error: {e}")
             fallback_questions = [
                 {
@@ -256,7 +399,6 @@ class GeminiService:
                     "is_follow_up": False
                 }
             ]
-            import random
             return random.choice(fallback_questions)
 
     @classmethod
@@ -270,12 +412,15 @@ class GeminiService:
             candidate_answer=candidate_answer
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=AnswerEvaluation,
                 system_instruction="You are an objective interviewer grading responses. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini evaluate_answer failed: {e}")
+                raise e
             logger.warning(f"Failed to evaluate answer, returning fallback mock. Error: {e}")
             return {
                 "score": 80,
@@ -292,12 +437,15 @@ class GeminiService:
             language=language
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=CodingQuestion,
                 system_instruction="You are a senior algorithms designer. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini generate_coding_question failed: {e}")
+                raise e
             logger.warning(f"Failed to generate coding question, returning fallback mock. Error: {e}")
             return {
                 "title": "Reverse Linked List",
@@ -318,12 +466,15 @@ class GeminiService:
             code_submission=code_submission
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=CodeReview,
                 system_instruction="You are a static code analyzer. Output JSON only. Do NOT provide solution code."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini review_code failed: {e}")
+                raise e
             logger.warning(f"Failed to review code, returning fallback mock. Error: {e}")
             return {
                 "time_complexity": "O(N)",
@@ -342,17 +493,15 @@ class GeminiService:
             num_questions=num_questions
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=AptitudeQuestionsSchema,
                 system_instruction="You are a logical aptitude test creator. Output JSON only."
             )
-            # Make sure it returns in expected schema
-            parsed = json.loads(raw_response)
-            if isinstance(parsed, dict) and "questions" in parsed:
-                # If they requested more, return them all. If less, slice.
-                return parsed
-            return {"questions": parsed if isinstance(parsed, list) else []}
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini generate_aptitude_questions failed: {e}")
+                raise e
             logger.warning(f"Failed to generate aptitude questions, returning fallback mock. Error: {e}")
             fallback_questions = [
                 {
@@ -686,7 +835,6 @@ class GeminiService:
                     "explanation": "Combine ratios: A:B = 8:12, B:C = 12:15 (so A:B:C = 8:12:15). Since C:D = 6:7 = 15:17.5. Multiply all by 2 to get integer values: A:B:C:D = 16:24:30:35."
                 }
             ]
-            # Slice according to requested num_questions, up to length of list
             limit = min(num_questions, len(fallback_questions))
             return {"questions": fallback_questions[:limit]}
 
@@ -701,12 +849,15 @@ class GeminiService:
             aptitude_data=json.dumps(aptitude_data)
         )
         try:
-            raw_response = await cls._call_gemini(
+            return await cls._call_gemini_structured(
                 prompt,
+                response_schema=ScorecardReport,
                 system_instruction="You are a lead recruitment coordinator. Output JSON only."
             )
-            return json.loads(raw_response)
         except Exception as e:
+            if not cls._is_mock_mode():
+                logger.error(f"Real Gemini generate_report failed: {e}")
+                raise e
             logger.warning(f"Failed to generate scorecard report, returning fallback mock. Error: {e}")
             return {
                 "overall_score": 83,
