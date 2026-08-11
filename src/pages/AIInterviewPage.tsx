@@ -65,27 +65,8 @@ export const AIInterviewPage: React.FC = () => {
     hasInitializedRef.current = true;
 
     const initSession = async () => {
-      const resumeId = localStorage.getItem('resumeId');
-      if (!resumeId) {
-        addToast('Please upload a resume in the Resume Builder first!', 'error');
-        setTimeout(() => navigate('/resume'), 1500);
-        return;
-      }
-
-      let jobId = localStorage.getItem('latestJobId');
-      if (!jobId) {
-        try {
-          // Generate a default job description if none analyzed yet
-          const defaultJD = await jobService.analyze(
-            'Looking for a Backend Software Engineer with experience in Python, FastAPI, and MongoDB.'
-          );
-          jobId = defaultJD.id;
-          localStorage.setItem('latestJobId', jobId as string);
-        } catch (e) {
-          addToast('Failed to initialize target job description.', 'error');
-          return;
-        }
-      }
+      let resumeId = localStorage.getItem('resumeId') || 'default';
+      let jobId = localStorage.getItem('latestJobId') || 'default';
 
       // Check if MediaRecorder is supported
       if (typeof MediaRecorder === 'undefined') {
@@ -100,7 +81,7 @@ export const AIInterviewPage: React.FC = () => {
         streamRef.current = stream;
         
         // Start interview session
-        const session = await interviewService.start(resumeId!, jobId!);
+        const session = await interviewService.start(resumeId, jobId);
         setSessionId(session.id);
         
         // Fetch first question

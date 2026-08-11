@@ -26,27 +26,78 @@ async def start_interview(
     jobs_col = get_jobs_collection()
     sessions_col = get_sessions_collection()
     
-    # Verify resume exists
-    try:
-        resume = await resumes_col.find_one({"_id": ObjectId(payload.resume_id)})
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid resume ID format")
-    if not resume:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
-        
-    # Verify job description exists
-    try:
-        job = await jobs_col.find_one({"_id": ObjectId(payload.job_id)})
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job description ID format")
-    if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job description not found")
-        
+    resume_id = payload.resume_id
+    job_id = payload.job_id
+
+    # Fallback/default resume generation if not specified or invalid format
+    if resume_id in ("default", "000000000000000000000000") or not ObjectId.is_valid(resume_id):
+        default_resume = await resumes_col.find_one({"user_id": current_user["id"], "is_default": True})
+        if not default_resume:
+            default_resume = {
+                "user_id": current_user["id"],
+                "filename": "default_resume.pdf",
+                "filepath": "",
+                "raw_text": "Default Candidate Profile: General Software Engineer with Python, JavaScript, HTML, CSS, SQL skills.",
+                "parsed_details": {
+                    "name": current_user.get("full_name", "Candidate"),
+                    "email": current_user.get("email", "candidate@example.com"),
+                    "phone": "",
+                    "skills": ["Python", "JavaScript", "HTML", "CSS", "SQL"],
+                    "education": [],
+                    "projects": [],
+                    "experience": [],
+                    "certifications": []
+                },
+                "is_default": True,
+                "created_at": datetime.now(timezone.utc)
+            }
+            res = await resumes_col.insert_one(default_resume)
+            resume_id = str(res.inserted_id)
+        else:
+            resume_id = str(default_resume["_id"])
+    else:
+        try:
+            resume = await resumes_col.find_one({"_id": ObjectId(resume_id)})
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid resume ID format")
+        if not resume:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
+
+    # Fallback/default job generation if not specified or invalid format
+    if job_id in ("default", "000000000000000000000000") or not ObjectId.is_valid(job_id):
+        default_job = await jobs_col.find_one({"user_id": current_user["id"], "is_default": True})
+        if not default_job:
+            default_job = {
+                "user_id": current_user["id"],
+                "raw_text": "Software Engineer role with focus on backend systems, databases, and APIs.",
+                "details": {
+                    "company": "InterviewAI X",
+                    "role": "Software Engineer",
+                    "required_skills": ["Python", "FastAPI", "MongoDB", "SQL"],
+                    "preferred_skills": ["Docker", "CI/CD"],
+                    "responsibilities": ["Design REST APIs", "Develop backend microservices"],
+                    "experience": "1-3 years"
+                },
+                "is_default": True,
+                "created_at": datetime.now(timezone.utc)
+            }
+            res = await jobs_col.insert_one(default_job)
+            job_id = str(res.inserted_id)
+        else:
+            job_id = str(default_job["_id"])
+    else:
+        try:
+            job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job description ID format")
+        if not job:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job description not found")
+
     # Create new interview session
     new_session = {
         "user_id": current_user["id"],
-        "resume_id": payload.resume_id,
-        "job_id": payload.job_id,
+        "resume_id": resume_id,
+        "job_id": job_id,
         "status": "ongoing",
         "current_turn": 0,
         "current_difficulty": 3,  # Medium starting difficulty
@@ -60,8 +111,8 @@ async def start_interview(
     return {
         "id": session_id,
         "user_id": current_user["id"],
-        "resume_id": payload.resume_id,
-        "job_id": payload.job_id,
+        "resume_id": resume_id,
+        "job_id": job_id,
         "status": new_session["status"],
         "current_turn": 0,
         "created_at": new_session["created_at"]
