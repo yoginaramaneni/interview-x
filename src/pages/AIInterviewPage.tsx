@@ -160,7 +160,22 @@ export const AIInterviewPage: React.FC = () => {
           } catch (e) {}
         }
 
-        const recorder = new MediaRecorder(streamRef.current, { mimeType: 'audio/webm' });
+        let options = {};
+        let mimeType = 'audio/webm';
+        if (typeof MediaRecorder.isTypeSupported === 'function') {
+          if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options = { mimeType: 'audio/webm' };
+            mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+            options = { mimeType: 'audio/ogg' };
+            mimeType = 'audio/ogg';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+            mimeType = 'audio/mp4';
+          }
+        }
+
+        const recorder = new MediaRecorder(streamRef.current, options);
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) {
             chunksRef.current.push(e.data);
@@ -172,7 +187,7 @@ export const AIInterviewPage: React.FC = () => {
               recognitionRef.current.stop();
             } catch (e) {}
           }
-          const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const audioBlob = new Blob(chunksRef.current, { type: mimeType });
           if (audioBlob.size > 0) {
             await uploadVoiceAnswer(audioBlob);
           }
