@@ -7,7 +7,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 class Settings(BaseSettings):
     GEMINI_API_KEY: str = "mock-api-key"
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash"
     MONGODB_URI: str = "mongodb://localhost:27017/interviewai_x"
     JWT_SECRET: str = "secret-key-1"
     JWT_REFRESH_SECRET: str = "secret-key-2"
